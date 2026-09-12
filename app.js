@@ -1,9 +1,9 @@
 // ===================================================
-// 우리 반 담벼락 - Firestore 연동 버전
+// 우리 반 담벼락 - Firestore + 구글 로그인 버전
 //
 // 메모를 쓰면 Firestore에 저장되고,
 // 올린 순서(createdAt)대로 담벼락에 붙습니다.
-// 새로고침해도 데이터가 유지됩니다.
+// 구글 로그인을 해야 메모를 쓸 수 있습니다.
 // ===================================================
 
 
@@ -20,6 +20,13 @@ import {
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 
 // --- Firebase 설정 ---
@@ -35,6 +42,8 @@ const firebaseConfig = {
 // Firebase 초기화
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
 // Firestore 컬렉션 참조 ("memos" 컬렉션을 사용합니다)
 const memosCol = collection(db, "memos");
@@ -159,5 +168,46 @@ onSnapshot(memosQuery, function (snapshot) {
   render();
 });
 
-// 입력 칸에 포커스
-input.focus();
+
+// ===================================================
+// 구글 로그인 / 로그아웃
+// ===================================================
+
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const userInfo = document.getElementById("userInfo");
+const userNameSpan = document.getElementById("userName");
+const writer = document.getElementById("writer");
+
+// 로그인 버튼 클릭 시 구글 팝업 로그인
+loginBtn.addEventListener("click", async function () {
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error("로그인 실패:", error);
+    alert("로그인에 실패했습니다. 다시 시도해 주세요.");
+  }
+});
+
+// 로그아웃 버튼 클릭
+logoutBtn.addEventListener("click", async function () {
+  await signOut(auth);
+});
+
+// 로그인 상태가 바뀔 때마다 화면을 갱신합니다
+onAuthStateChanged(auth, function (user) {
+  if (user) {
+    // 로그인 상태: 이름을 보여주고, 입력 칸을 엽니다
+    loginBtn.style.display = "none";
+    userInfo.style.display = "inline";
+    userNameSpan.textContent = "🙂 " + user.displayName + "님";
+    writer.hidden = false;
+    input.focus();
+  } else {
+    // 로그아웃 상태: 로그인 버튼만 보여줍니다
+    loginBtn.style.display = "inline";
+    userInfo.style.display = "none";
+    userNameSpan.textContent = "";
+    writer.hidden = true;
+  }
+});
