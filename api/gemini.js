@@ -16,7 +16,9 @@
 //   API 키는 코드에 적지 말고 Vercel 환경변수 GEMINI_API_KEY에 넣습니다.
 //   (https://aistudio.google.com/apikey 에서 무료로 발급받을 수 있습니다)
 //
-// 여기서 쓰는 모델(gemini-2.5-flash)은 Google AI Studio 무료 사용량 안에서 쓸 수 있습니다.
+// 여기서 쓰는 모델(gemini-3.6-flash)은 Google AI Studio 무료 사용량 안에서 쓸 수 있습니다.
+// (Google이 모델을 자주 교체하니, 나중에 "no longer available" 에러가 뜨면
+//  에러 메시지가 알려주는 새 모델 이름으로 이 값만 바꿔주면 됩니다)
 // ===================================================
 
 export default async function handler(req, res) {
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
     "메모 내용: \"" + text + "\"";
 
   try {
-    const model = "gemini-2.5-flash";
+    const model = "gemini-3.6-flash";
     const url =
       "https://generativelanguage.googleapis.com/v1beta/models/" +
       model +
