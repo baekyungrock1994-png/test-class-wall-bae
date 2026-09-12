@@ -1,9 +1,12 @@
 // ===================================================
-// 우리 반 담벼락 - Firestore + 구글 로그인 버전
+// 우리 반 담벼락 - Firestore + 구글 로그인 + 역할 구분 버전
 //
 // 메모를 쓰면 Firestore에 저장되고,
 // 올린 순서(createdAt)대로 담벼락에 붙습니다.
 // 구글 로그인을 해야 메모를 쓸 수 있습니다.
+// 로그인한 사람은 "student"(학생) 또는 "teacher"(교사)이고,
+// 학생은 메모를 쓰기만 할 수 있고, 교사만 아무 메모나 지울 수 있습니다.
+// (진짜 보안은 firestore.rules 파일이 담당합니다)
 // ===================================================
 
 
@@ -15,6 +18,8 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDoc,
+  setDoc,
   query,
   orderBy,
   onSnapshot,
@@ -52,6 +57,12 @@ const memosCol = collection(db, "memos");
 // --- 메모 목록 (Firestore에서 실시간으로 받아옵니다) ---
 let memos = [];
 
+// --- 로그인한 사람의 역할 ("teacher" 또는 "student") ---
+// 처음 로그인하면 자동으로 "student"가 되고,
+// 교사는 Firebase 콘솔에서 본인의 users 문서를 "teacher"로 직접 바꿔야 합니다.
+let currentRole = null;
+let unsubscribeRole = null;
+
 
 // ===================================================
 // 데이터를 다루는 함수 세 개
@@ -72,9 +83,12 @@ function loadMemos() {
 
 // 메모를 새로 씁니다.
 // Firestore에 문서를 추가합니다. 저장이 끝나면 onSnapshot이 자동으로 화면을 갱신합니다.
+// ownerUid를 함께 저장해서, 이 메모가 누구 것인지 표시합니다.
+// (다른 사람의 uid로 몰래 쓰는 것은 Firestore 보안 규칙이 막습니다)
 async function addMemo(text) {
   await addDoc(memosCol, {
     text: text,
+    ownerUid: auth.currentUser.uid,
     createdAt: serverTimestamp()  // 서버 시각을 사용합니다
   });
 }
@@ -104,14 +118,18 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  const del = document.createElement("button");
-  del.textContent = "×";
-  // addEventListener 방식으로 이벤트를 등록합니다
-  del.addEventListener("click", async function () {
-    await deleteMemo(memo.id);
-    // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
-  });
-  div.appendChild(del);
+  // 삭제 버튼은 교사한테만 보여줍니다.
+  // (학생은 자기 메모라도 지울 수 없습니다 - 규칙에서도 막혀 있습니다)
+  if (currentRole === "teacher") {
+    const del = document.createElement("button");
+    del.textContent = "×";
+    // addEventListener 방식으로 이벤트를 등록합니다
+    del.addEventListener("click", async function () {
+      await deleteMemo(memo.id);
+      // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
+    });
+    div.appendChild(del);
+  }
 
   const span = document.createElement("span");
   span.textContent = memo.text;
@@ -177,6 +195,7 @@ const loginBtn = document.getElementById("loginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const userInfo = document.getElementById("userInfo");
 const userNameSpan = document.getElementById("userName");
+const userUidSpan = document.getElementById("userUid");
 const writer = document.getElementById("writer");
 
 // 로그인 버튼 클릭 시 구글 팝업 로그인
@@ -194,20 +213,53 @@ logoutBtn.addEventListener("click", async function () {
   await signOut(auth);
 });
 
+// users/{uid} 문서를 확인해서, 처음 로그인하는 사람이면 "student"로 만들어 줍니다.
+// 이미 있으면 손대지 않습니다 (교사로 바꿔둔 걸 덮어쓰지 않기 위해서입니다).
+async function ensureUserDoc(uid) {
+  const userRef = doc(db, "users", uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) {
+    await setDoc(userRef, { role: "student" });
+  }
+}
+
+// users/{uid} 문서를 실시간으로 지켜보다가, role이 바뀌면 화면도 다시 그립니다.
+// (교사가 콘솔에서 역할을 바꿔주면, 다시 로그인하지 않아도 반영됩니다)
+function watchRole(uid) {
+  const userRef = doc(db, "users", uid);
+  unsubscribeRole = onSnapshot(userRef, function (snap) {
+    currentRole = snap.exists() ? snap.data().role : "student";
+    render();
+  });
+}
+
 // 로그인 상태가 바뀔 때마다 화면을 갱신합니다
-onAuthStateChanged(auth, function (user) {
+onAuthStateChanged(auth, async function (user) {
   if (user) {
     // 로그인 상태: 이름을 보여주고, 입력 칸을 엽니다
     loginBtn.style.display = "none";
     userInfo.style.display = "inline";
     userNameSpan.textContent = "🙂 " + user.displayName + "님";
+    // 교사로 바꾸려면 이 uid로 Firebase 콘솔의 users 문서를 고쳐야 합니다.
+    userUidSpan.textContent = "(uid: " + user.uid + ")";
     writer.hidden = false;
     input.focus();
+
+    await ensureUserDoc(user.uid);
+    watchRole(user.uid);
   } else {
     // 로그아웃 상태: 로그인 버튼만 보여줍니다
     loginBtn.style.display = "inline";
     userInfo.style.display = "none";
     userNameSpan.textContent = "";
+    userUidSpan.textContent = "";
     writer.hidden = true;
+
+    if (unsubscribeRole) {
+      unsubscribeRole();
+      unsubscribeRole = null;
+    }
+    currentRole = null;
+    render();
   }
 });

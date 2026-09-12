@@ -1,0 +1,68 @@
+// ===================================================
+// 우리 반 담벼락 - Firestore 보안 규칙
+//
+// 이 파일은 코드 저장소에 기록만 해 두는 용도입니다.
+// 실제로 적용하려면, Firebase 콘솔 → Firestore Database → 규칙(Rules) 탭에
+// 이 내용을 그대로 붙여넣고 "게시(Publish)"를 눌러야 합니다.
+//
+// 역할(role)
+// - teacher(교사): 모든 메모를 쓰고 고치고 지울 수 있습니다.
+// - student(학생): 자기 메모를 "쓰기"만 할 수 있습니다. 고치거나 지울 수 없고,
+//                  다른 사람의 메모는 건드릴 수 없습니다.
+//
+// 최초의 교사 계정 만들기
+// 1) 교사가 될 사람이 먼저 구글 로그인을 한 번 합니다.
+//    → users/{그 사람의 uid} 문서가 자동으로 role: "student"로 생성됩니다.
+// 2) Firebase 콘솔 → Firestore Database → 데이터 탭에서
+//    users 컬렉션의 그 문서를 열어 role 값을 "teacher"로 직접 고칩니다.
+//    (화면에 "(uid: ...)"로 자기 uid가 표시되니 그걸로 문서를 찾으면 됩니다)
+// 이렇게 콘솔에서만 승격이 가능하게 해 두어야, 학생이 스스로 교사로
+// 바꿔치기하는 것을 막을 수 있습니다.
+// ===================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // users/{요청한 사람의 uid} 문서의 role이 "teacher"인지 확인합니다.
+    function isTeacher() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    // --- users 컬렉션: 로그인한 사람의 역할(teacher/student)을 저장합니다 ---
+    match /users/{uid} {
+      // 본인 문서만 읽을 수 있습니다.
+      allow read: if isSignedIn() && request.auth.uid == uid;
+
+      // 처음 로그인할 때 자기 uid로, role은 반드시 "student"로만 만들 수 있습니다.
+      // (스스로 "teacher"라고 써서 만드는 것은 막습니다)
+      allow create: if isSignedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.role == 'student';
+
+      // role을 바꾸는 것(학생 → 교사 승격 등)은 이미 교사인 사람만 할 수 있습니다.
+      // 세상에 교사가 아직 한 명도 없다면, Firebase 콘솔에서 직접 고쳐야 합니다.
+      allow update, delete: if isTeacher();
+    }
+
+    // --- memos 컬렉션: 담벼락에 붙는 메모입니다 ---
+    match /memos/{memoId} {
+      // 담벼락은 누구나 볼 수 있습니다.
+      allow read: if true;
+
+      // 메모 쓰기는 로그인한 사람이면 누구나, 단 ownerUid가 자기 uid여야 합니다.
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerUid == request.auth.uid;
+
+      // 메모를 고치거나 지우는 것은 교사만 할 수 있습니다.
+      // (학생은 자기 메모라도 고치거나 지울 수 없습니다)
+      allow update, delete: if isTeacher();
+    }
+  }
+}
