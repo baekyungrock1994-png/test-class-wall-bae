@@ -127,6 +127,12 @@ input.addEventListener("keydown", async function (e) {
     const text = input.value.trim();
     if (text === "") return;
 
+    // 5글자 이상일 때만 저장합니다
+    if (text.length < 5) {
+      alert("메모는 5글자 이상 입력해 주세요.");
+      return;
+    }
+
     await addMemo(text);
     input.value = "";
     // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
