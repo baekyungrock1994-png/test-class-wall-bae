@@ -64,7 +64,9 @@ export default async function handler(req, res) {
 
     if (!geminiRes.ok) {
       console.error("Gemini 오류:", data);
-      res.status(502).json({ error: "Gemini 호출에 실패했습니다." });
+      // Google이 알려준 진짜 이유를 그대로 보여줍니다. (예: API 키가 잘못됨, 모델을 찾을 수 없음 등)
+      const reason = (data && data.error && data.error.message) || ("상태 코드 " + geminiRes.status);
+      res.status(502).json({ error: "Gemini 호출에 실패했습니다: " + reason });
       return;
     }
 
