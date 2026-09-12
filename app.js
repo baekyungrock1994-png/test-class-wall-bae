@@ -7,6 +7,7 @@
 // 로그인한 사람은 "student"(학생) 또는 "teacher"(교사)이고,
 // 학생은 메모를 쓰기만 할 수 있고, 교사만 아무 메모나 지울 수 있습니다.
 // (진짜 보안은 firestore.rules 파일이 담당합니다)
+// 교사는 메모마다 "🤖 AI" 버튼을 눌러 Gemini가 만든 코멘트를 달 수 있습니다.
 // ===================================================
 
 
@@ -17,6 +18,7 @@ import {
   collection,
   addDoc,
   deleteDoc,
+  updateDoc,
   doc,
   getDoc,
   setDoc,
@@ -99,6 +101,29 @@ async function deleteMemo(id) {
   await deleteDoc(doc(db, "memos", id));
 }
 
+// 메모 내용을 Vercel 서버(/api/gemini)로 보내서 AI 코멘트를 받아 옵니다.
+// (Gemini API 키는 서버에만 있고, 여기서는 그 결과만 받습니다)
+async function requestAiComment(text) {
+  const res = await fetch("/api/gemini", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "AI 코멘트 요청에 실패했습니다.");
+  }
+  return data.comment;
+}
+
+// 메모에 AI 코멘트를 받아서 Firestore에 저장합니다.
+// (memos 문서 수정은 교사만 할 수 있도록 Firestore 규칙에서 막혀 있습니다)
+async function addAiComment(id, text) {
+  const comment = await requestAiComment(text);
+  await updateDoc(doc(db, "memos", id), { aiComment: comment });
+}
+
 
 // ===================================================
 // 화면 그리기
@@ -118,7 +143,7 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 삭제 버튼은 교사한테만 보여줍니다.
+  // 삭제 버튼과 AI 버튼은 교사한테만 보여줍니다.
   // (학생은 자기 메모라도 지울 수 없습니다 - 규칙에서도 막혀 있습니다)
   if (currentRole === "teacher") {
     const del = document.createElement("button");
@@ -129,11 +154,37 @@ function makeMemo(memo) {
       // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
     });
     div.appendChild(del);
+
+    const aiBtn = document.createElement("button");
+    aiBtn.textContent = "🤖 AI";
+    aiBtn.title = "이 메모에 AI 코멘트 달기";
+    aiBtn.addEventListener("click", async function () {
+      aiBtn.disabled = true;
+      aiBtn.textContent = "생각 중...";
+      try {
+        await addAiComment(memo.id, memo.text);
+        // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
+      } catch (error) {
+        console.error("AI 코멘트 실패:", error);
+        alert("AI 코멘트를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        aiBtn.disabled = false;
+        aiBtn.textContent = "🤖 AI";
+      }
+    });
+    div.appendChild(aiBtn);
   }
 
   const span = document.createElement("span");
   span.textContent = memo.text;
   div.appendChild(span);
+
+  // AI 코멘트가 있으면 메모 아래에 함께 보여줍니다.
+  if (memo.aiComment) {
+    const aiComment = document.createElement("p");
+    aiComment.className = "ai-comment";
+    aiComment.textContent = "🤖 " + memo.aiComment;
+    div.appendChild(aiComment);
+  }
 
   return div;
 }
@@ -180,6 +231,7 @@ onSnapshot(memosQuery, function (snapshot) {
     return {
       id: docSnap.id,                                    // Firestore 문서 ID
       text: data.text,
+      aiComment: data.aiComment || null,                  // 교사가 요청한 AI 코멘트
       createdAt: data.createdAt ? data.createdAt.toMillis() : null  // Timestamp → 밀리초
     };
   });
