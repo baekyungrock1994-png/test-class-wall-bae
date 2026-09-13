@@ -7,7 +7,9 @@
 // 로그인한 사람은 "student"(학생) 또는 "teacher"(교사)이고,
 // 학생은 메모를 쓰기만 할 수 있고, 교사만 아무 메모나 지울 수 있습니다.
 // (진짜 보안은 firestore.rules 파일이 담당합니다)
-// 교사는 메모마다 "🤖 AI" 버튼을 눌러 Gemini가 만든 코멘트를 달 수 있습니다.
+// 교사는 메모마다 AI 버튼을 눌러 Gemini가 만든 코멘트를 달 수 있습니다.
+// 왼쪽 가장자리에 마우스를 올리면 날짜별 목록이 나오고, 날짜를 고르면
+// 그날 쓴 메모만 담벼락에 보여줍니다.
 // ===================================================
 
 
@@ -65,6 +67,9 @@ let memos = [];
 let currentRole = null;
 let unsubscribeRole = null;
 
+// --- 왼쪽 사이드에서 고른 날짜 (null이면 전체 보기) ---
+let selectedDate = null;
+
 
 // ===================================================
 // 데이터를 다루는 함수 세 개
@@ -74,13 +79,36 @@ let unsubscribeRole = null;
 // 메모를 읽어 옵니다.
 // Firestore의 실시간 리스너(onSnapshot)가 memos 배열을 자동으로 갱신하므로,
 // 이 함수는 현재 메모 배열을 createdAt 순으로 정렬하여 반환합니다.
+// 왼쪽 사이드에서 날짜를 골랐으면(selectedDate), 그 날짜의 메모만 걸러냅니다.
 function loadMemos() {
-  return memos.slice().sort(function (a, b) {
+  const sorted = memos.slice().sort(function (a, b) {
     // createdAt이 아직 서버에서 안 내려온 경우(null) 맨 뒤로 보냅니다
     const timeA = a.createdAt || Infinity;
     const timeB = b.createdAt || Infinity;
     return timeA - timeB;
   });
+
+  if (!selectedDate) return sorted;
+
+  return sorted.filter(function (memo) {
+    return memo.createdAt && dateKey(memo.createdAt) === selectedDate;
+  });
+}
+
+// 밀리초 시각을 "2026-09-13" 같은 날짜 키로 바꿉니다. (사이드바에서 날짜를 구분하는 용도)
+function dateKey(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+// 날짜 키를 "9월 13일 (일)" 같이 사람이 읽기 좋은 글자로 바꿉니다.
+function formatDateLabel(key) {
+  const parts = key.split("-").map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
 }
 
 // 메모를 새로 씁니다.
@@ -138,29 +166,67 @@ function render() {
   });
 }
 
+// 왼쪽 사이드바의 날짜 목록을 그립니다. ("전체 보기" + 메모가 있는 날짜들)
+function renderDateList() {
+  const dateList = document.getElementById("dateList");
+  dateList.innerHTML = "";
+
+  const keys = memos
+    .filter(function (memo) { return memo.createdAt; })
+    .map(function (memo) { return dateKey(memo.createdAt); });
+  const uniqueKeys = Array.from(new Set(keys)).sort().reverse();
+
+  const allItem = document.createElement("li");
+  allItem.textContent = "전체 보기";
+  allItem.className = selectedDate === null ? "active" : "";
+  allItem.addEventListener("click", function () {
+    selectedDate = null;
+    renderDateList();
+    render();
+  });
+  dateList.appendChild(allItem);
+
+  uniqueKeys.forEach(function (key) {
+    const item = document.createElement("li");
+    item.textContent = formatDateLabel(key);
+    item.className = key === selectedDate ? "active" : "";
+    item.addEventListener("click", function () {
+      selectedDate = key;
+      renderDateList();
+      render();
+    });
+    dateList.appendChild(item);
+  });
+}
+
 // 메모 한 장 만들기
 function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 삭제 버튼과 AI 버튼은 교사한테만 보여줍니다.
+  // 삭제(빨강)·AI(노랑) 버튼은 교사한테만, 맥의 신호등 버튼처럼 왼쪽 위에 동그랗게 보여줍니다.
   // (학생은 자기 메모라도 지울 수 없습니다 - 규칙에서도 막혀 있습니다)
   if (currentRole === "teacher") {
+    const dots = document.createElement("div");
+    dots.className = "memo-dots";
+
     const del = document.createElement("button");
+    del.className = "dot dot-close";
     del.textContent = "×";
+    del.title = "메모 지우기";
     // addEventListener 방식으로 이벤트를 등록합니다
     del.addEventListener("click", async function () {
       await deleteMemo(memo.id);
       // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
     });
-    div.appendChild(del);
+    dots.appendChild(del);
 
     const aiBtn = document.createElement("button");
-    aiBtn.textContent = "🤖 AI";
+    aiBtn.className = "dot dot-ai";
+    aiBtn.textContent = "AI";
     aiBtn.title = "이 메모에 AI 코멘트 달기";
     aiBtn.addEventListener("click", async function () {
       aiBtn.disabled = true;
-      aiBtn.textContent = "생각 중...";
       try {
         await addAiComment(memo.id, memo.text);
         // onSnapshot이 render()를 자동 호출하므로 여기서는 따로 부르지 않습니다
@@ -168,10 +234,11 @@ function makeMemo(memo) {
         console.error("AI 코멘트 실패:", error);
         alert("AI 코멘트를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.");
         aiBtn.disabled = false;
-        aiBtn.textContent = "🤖 AI";
       }
     });
-    div.appendChild(aiBtn);
+    dots.appendChild(aiBtn);
+
+    div.appendChild(dots);
   }
 
   const span = document.createElement("span");
@@ -235,6 +302,7 @@ onSnapshot(memosQuery, function (snapshot) {
       createdAt: data.createdAt ? data.createdAt.toMillis() : null  // Timestamp → 밀리초
     };
   });
+  renderDateList();
   render();
 });
 

@@ -6,30 +6,185 @@
   <title>우리 반 담벼락</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📌</text></svg>">
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    h1 { font-size: 24px; }
-    .notice { background: #ffe9e9; padding: 10px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    }
 
-    /* 로그인 버튼이 들어올 자리 */
-    #userArea { margin: 10px 0; color: #666; }
+    /* 오른쪽 위 로그인 영역 (구글 계정 칩 느낌) */
+    #userArea {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      font-size: 13px;
+      color: #555;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #userArea button {
+      border: none;
+      background: #fff;
+      padding: 8px 16px;
+      border-radius: 999px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .15);
+      cursor: pointer;
+      font-size: 13px;
+      color: #1d1d1f;
+    }
+    #userArea button:hover { box-shadow: 0 1px 8px rgba(0, 0, 0, .22); }
 
-    /* 메모 쓰는 칸 */
-    #writer { margin: 16px 0; }
-    #writer textarea { width: 400px; font-size: 16px; }
+    /* 가운데 히어로 영역: 제목 - 메모 쓰는 칸 (구글 홈 느낌) */
+    #hero {
+      max-width: 600px;
+      margin: 16vh auto 40px;
+      padding: 0 20px;
+      text-align: center;
+    }
+    #hero h1 {
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      margin: 0 0 28px;
+    }
+    #writer textarea {
+      width: 100%;
+      min-height: 54px;
+      font-size: 16px;
+      font-family: inherit;
+      padding: 14px 20px;
+      border: 1px solid #e3e3e6;
+      border-radius: 22px;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, .06);
+      resize: vertical;
+    }
+    #writer textarea:focus {
+      outline: none;
+      border-color: #c3c3c8;
+      box-shadow: 0 1px 10px rgba(0, 0, 0, .12);
+    }
+    .notice {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: #86868b;
+    }
 
-    /* 메모가 붙는 담벼락 */
-    #wall { display: flex; flex-wrap: wrap; gap: 10px; }
-    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; }
-    .memo button { float: right; }
-    .memo .ai-comment { clear: both; margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed #ccc; font-size: 13px; color: #555; }
+    /* 담벼락 (메모 목록) */
+    #wall {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 18px;
+      max-width: 1000px;
+      margin: 0 auto 60px;
+      padding: 0 24px;
+    }
+
+    /* 메모지 - 애플 스타일(둥근 모서리 + 은은한 그림자) */
+    .memo {
+      position: relative;
+      width: 210px;
+      background: #fffdf6;
+      border-radius: 20px;
+      padding: 30px 16px 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 8px 20px rgba(0, 0, 0, .08);
+    }
+
+    /* 맥 창의 신호등 버튼처럼, 왼쪽 위에 동그란 버튼 두 개 */
+    .memo-dots {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      display: flex;
+      gap: 8px;
+    }
+    .memo .dot {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font-size: 8px;
+      line-height: 13px;
+      color: transparent;
+      font-weight: 700;
+    }
+    .memo .dot:hover { color: rgba(0, 0, 0, .5); }
+    .memo .dot-close { background: #ff5f57; }
+    .memo .dot-ai { background: #febc2e; }
+    .memo .dot:disabled { opacity: .5; cursor: default; }
+
+    .memo .ai-comment {
+      margin: 10px 0 0;
+      padding-top: 10px;
+      border-top: 1px dashed #e6e1c9;
+      font-size: 12.5px;
+      color: #6b6b6b;
+    }
+
+    /* 왼쪽 가장자리에 마우스를 올리면 나오는 날짜 사이드바 */
+    #sidebarZone {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 14px;
+      height: 100vh;
+      z-index: 60;
+    }
+    #sidebar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 220px;
+      height: 100%;
+      background: #fff;
+      box-shadow: 2px 0 18px rgba(0, 0, 0, .12);
+      transform: translateX(-206px);
+      transition: transform .25s ease;
+      padding: 28px 18px;
+      overflow-y: auto;
+    }
+    #sidebarZone:hover #sidebar,
+    #sidebar:hover {
+      transform: translateX(0);
+    }
+    #sidebar h2 {
+      margin: 0 0 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #86868b;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    #dateList { list-style: none; margin: 0; padding: 0; }
+    #dateList li {
+      padding: 9px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #333;
+      cursor: pointer;
+    }
+    #dateList li:hover { background: #f0f0f2; }
+    #dateList li.active { background: #e8f0fe; color: #1a73e8; font-weight: 600; }
   </style>
 </head>
 <body>
 
-  <h1>우리 반 담벼락</h1>
-
-  <!-- Firestore에 저장됩니다 -->
-  <p class="notice" style="background:#e9ffe9;">✅ 메모가 Firestore에 자동 저장됩니다.</p>
+  <!-- 왼쪽 가장자리에 마우스를 올리면 날짜 목록이 슬라이드로 나옵니다 -->
+  <div id="sidebarZone">
+    <div id="sidebar">
+      <h2>날짜별로 보기</h2>
+      <ul id="dateList"></ul>
+    </div>
+  </div>
 
   <!-- 로그인 영역: 구글 로그인/로그아웃 버튼과 사용자 이름 -->
   <div id="userArea">
@@ -41,8 +196,13 @@
     </span>
   </div>
 
-  <div id="writer" hidden>
-    <textarea id="input" rows="3" placeholder="메모를 쓰고 엔터"></textarea>
+  <!-- 가운데 정렬된 제목 + 메모 쓰는 칸 (구글 홈 느낌) -->
+  <div id="hero">
+    <h1>우리 반 담벼락</h1>
+    <div id="writer" hidden>
+      <textarea id="input" rows="1" placeholder="메모를 쓰고 엔터"></textarea>
+    </div>
+    <p class="notice">메모는 자동으로 저장됩니다.</p>
   </div>
 
   <!-- 메모는 app.js가 그립니다 -->
